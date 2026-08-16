@@ -1,0 +1,31 @@
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.txt
+!README.md
+!requirements.txt
+
+# Database (optional - uncomment to ignore)
+# data/*.db
+
+# Sprites (auto-generated)
+sprites/.version
