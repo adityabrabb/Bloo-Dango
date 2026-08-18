@@ -11,6 +11,7 @@ CHECK_INTERVAL_MINUTES = 1
 
 class SchedulerSignals(QObject):
     remind_requested = pyqtSignal(str)
+    notification_requested = pyqtSignal(int, str)
 
 
 def parse_due(due):
@@ -33,11 +34,13 @@ class Scheduler:
         self.bloo = bloo_widget
         self.signals = SchedulerSignals()
         self.signals.remind_requested.connect(self.bloo.set_mood)
+        self.signals.notification_requested.connect(self._show_notification)
         self.scheduler = BackgroundScheduler()
         self.sleep_mode = False
-        # Task ids already reminded about, so an overdue task doesn't fire a
-        # toast on every single check.
+        # Task ids already notified about. Separated into two sets so a
+        # failed notification doesn't permanently silence a task.
         self._reminded = set()
+        self._pending_notify = set()
 
         # Job 1: look for due tasks
         self.scheduler.add_job(
@@ -57,6 +60,9 @@ class Scheduler:
 
     def start(self):
         self.scheduler.start()
+        # Immediate check so overdue tasks notify on startup.
+        # Safe now because show_reminder runs on the GUI thread via signal.
+        self.check_due()
 
     def shutdown(self):
         if self.scheduler.running:
@@ -84,20 +90,36 @@ class Scheduler:
         # Forget tasks that were completed or deleted so they can remind again
         # if they ever come back.
         self._reminded &= pending_ids
+        self._pending_notify &= pending_ids
 
         if not due_tasks:
             return
 
         due_tasks.sort(key=lambda pair: pair[0])
         for _, task in due_tasks:
-            if task['id'] in self._reminded:
+            if task['id'] in self._reminded or task['id'] in self._pending_notify:
                 continue
-            self._reminded.add(task['id'])
+            self._pending_notify.add(task['id'])
             # Emit signal so the mood change happens on the GUI thread
             self.signals.remind_requested.emit('remind')
-            from notifier import show_reminder
-            show_reminder(task['title'])
+            # Notification runs on the main thread via signal too — plyer
+            # needs COM initialized on the calling thread.
+            self.signals.notification_requested.emit(task['id'], task['title'])
             break  # one reminder per check
+
+    def _show_notification(self, task_id, title):
+        """Show notification on the main (GUI) thread."""
+        from notifier import show_reminder
+        try:
+            show_reminder(title)
+            self._reminded.add(task_id)
+        except Exception as e:
+            print(f"Notification failed for task {task_id}, will retry: {e}")
+        finally:
+            # Always clear pending so the task isn't stuck if the app quits
+            # mid-notification. On failure it stays out of _reminded so the
+            # next check_due retries it.
+            self._pending_notify.discard(task_id)
 
     def sleep_check(self):
         """Check if we should be in sleep mode based on time.
