@@ -1,8 +1,17 @@
 import sqlite3
 import os
+import sys
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'data', 'tasks.db')
+# When running as a PyInstaller bundle, __file__ points to a temp extraction
+# directory that is wiped on every launch.  Use the EXE's directory instead
+# so the database persists across restarts.
+if getattr(sys, 'frozen', False):
+    _BASE_DIR = os.path.dirname(sys.executable)
+else:
+    _BASE_DIR = os.path.dirname(__file__)
+
+DB_PATH = os.path.join(_BASE_DIR, 'data', 'tasks.db')
 
 # Single canonical timestamp format for `due`, `created` and `completed`.
 # Everything that writes a datetime into the DB must use this, otherwise the
